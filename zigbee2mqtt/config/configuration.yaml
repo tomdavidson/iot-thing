@@ -1,0 +1,32 @@
+homeassistant: false
+
+# allow new devices to join
+permit_join: true
+
+# MQTT settings
+mqtt:
+  # MQTT base topic for zigbee2mqtt MQTT messages
+  base_topic: zigbee2mqtt
+  # MQTT server URL
+  server: 'mqtt://mqtt:1883'
+  include_device_information: true
+  # MQTT server authentication, uncomment if required:
+  # user: my_user
+  # password: my_password
+
+serial:
+  adapter: ezsp
+  port: /dev/ttyACM0
+
+advanced:
+  pan_id: 815
+  # Optional: ZigBee channel, changing requires re-pairing of all devices.
+  # (Note: use a ZLL channel: 11, 15, 20, or 25 to avoid Problems)
+  # (default: 11)
+  channel: 15
+
+frontend:
+  port: 8084
+
+experimental:
+  new_api: true

@@ -1,0 +1,24 @@
+name: "iot-things"
+type: "sw.application"
+version: 2023.12.1
+description: "Open source devices to MQTT with Node-RED controls."
+post-provisioning: >-
+  ## Usage instructions
+
+  access
+  docs 
+
+assets:
+  repository:
+    type: "blob.asset"
+    data:
+      url: "https://github.com/tomdavidson/balena-iot-things"
+  logo:
+    type: "blob.asset"
+    data:
+      url: "https://raw.githubusercontent.com/tomdavidson/balena-iot-things/main/logo.png"
+data:
+  defaultDeviceType: "raspberrypi3-64"
+  supportedDeviceTypes:
+    - "raspberrypi3-64"
+    - "raspberrypi4-64"

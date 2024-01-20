@@ -1,0 +1,180 @@
+version: '2'
+
+volumes:
+  node-red-data:
+  grafana-data:
+  influxdb-data:
+  influxdb-etc:
+  zwave-config:
+  zig2mq-data:
+  mosquitto:
+
+services:
+
+  # https://github.com/balenablocks/hostname
+  hostname:
+    build: hostname
+    restart: no
+    labels:
+      io.balena.features.supervisor-api: 1
+    environment:
+      SET_HOSTNAME: iot-things
+
+  reverse-proxy:
+    image: bh.cr/gh_ajlennon/reverse-proxy
+    command:
+        - "--log.level=DEBUG"
+        - "--accesslog=true"
+        - "--accesslog.filepath=/var/log/traefik.log"
+        - "--api.dashboard=true"
+        - "--api.insecure"
+        - "--providers.docker=true"
+        - "--providers.docker.endpoint=unix:///var/run/balena-engine.sock"
+        - "--providers.docker.exposedbydefault=false"
+        - "--entrypoints.web.address=:80"
+    ports:
+        - "80:80" # The HTTP port
+        - "8080:8080" # The Dashboard port
+    labels:
+        io.balena.features.balena-socket: '1'
+    restart: always
+
+  zwavejs:
+    build: zwavejs
+    container_name: zwavejs
+    labels:
+      - traefik.enable=true
+      - traefik.http.services.zwavejs.loadbalancer.server.port=8083
+      - traefik.http.routers.zwavejs.entrypoints=web
+      - traefik.http.routers.zwavejs.rule=PathPrefix(`/zwavejs`)
+      - traefik.http.middlewares.zwavejs.headers.customrequestheaders.X-Script-Name=X-External-Path:/zwave/
+      - traefik.http.middlewares.zwavejs-strip-basepath.stripprefix.prefixes=/zwavejs
+    environment:
+      - SESSION_SECRET=mysupersecretkey
+      - ZWAVEJS_EXTERNAL_CONFIG=/usr/src/app/store/
+      - BASE_PATH=/zwavejs/
+      - TZ=America/Denver
+    restart: no
+    cap_add:
+      - SYS_RAWIO
+    stop_signal: SIGINT      
+    devices:
+      - '/dev/serial/by-id/usb-Zooz_800_Z-Wave_Stick_533D004242-if00:/dev/zwave'
+    volumes:
+      - zwave-config:/usr/src/app/store
+    ports:
+      - '8091:8083' # port for web interface
+      - '3000:3000' # port for Z-Wave JS websocket server
+    depends_on:
+      reverse-proxy:
+        condition: service_started
+      mosquitto:
+        condition: service_started
+
+
+  # https://www.zigbee2mqtt.io/guide/getting-started/#installation
+  zigbee2mqtt:
+    build: zigbee2mqtt
+    container_name: zigbee2mqtt
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.zigbee2mqtt.entrypoints=web"
+      - "traefik.http.routers.zigbee2mqtt.rule=PathPrefix(`/zig2mq`)"
+      - "traefik.http.services.zigbee2mqtt.loadbalancer.server.port=8084"
+    restart: 'no' 
+    volumes:
+      - zig2mq-data:/app/data
+    ports:
+      - 8084:8084
+    environment:
+      - TZ=America/Denver
+      - DATA=/app/data
+    cap_add:
+      - SYS_RAWIO
+    tty: true
+    stop_signal: SIGINT
+    devices:
+      - "/dev/serial/by-id/usb-ITEAD_SONOFF_Zigbee_3.0_USB_Dongle_Plus_V2_20231118155043-if00:/dev/ttyACM0"
+    depends_on:
+      reverse-proxy:
+        condition: service_started
+      mosquitto:
+        condition: service_started
+
+   mosquitto:
+    build: mosquitto
+    container_name: mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - mosquitto:/etc/mosquitto
+
+  node-red:
+    image: bh.cr/gh_ajlennon/balena-node-red
+    container_name: node-red
+    privileged: true
+    restart: unless-stopped
+    volumes:
+        - 'node-red-data:/data'
+    labels:
+        - "traefik.enable=true"
+        - "traefik.http.services.node-red.loadbalancer.server.port=8081"
+        - "traefik.http.routers.node-red.entrypoints=web"
+        - "traefik.http.routers.node-red.rule=PathPrefix(`/node-red`)"
+    environment:
+        PORT: 80
+        HTTP_ROOT: "node-red"
+        USERNAME: "balena"
+        PASSWORD: "balena"
+        ENCRIPTION_KEY: "balena"
+    ports:
+        - 80:8081
+    depends_on:
+      reverse-proxy:
+        condition: service_started
+
+  # influxdb:
+  #   image: influxdb:1.7.11
+  #   container_name: influxdb
+  #   restart: unless-stopped
+  #   volumes:
+  #       - influxdb-data:/var/lib/influxdb
+  #       - influxdb-etc:/etc/influxdb
+
+    # grafana:
+  #   image: bh.cr/balenalabs/dashboard
+  #   container_name: grafana
+  #   restart: unless-stopped
+  #   volumes:
+  #     - "grafana-data:/data"
+    #   ports:
+  #       - 80:8082
+  #   environment:
+  #     - "PORT=80"
+  #     - "GF_SERVER_ROOT_URL=/grafana"
+  #     - "GF_SERVER_SERVE_FROM_SUB_PATH=true"
+  #   labels:
+  #     - "traefik.enable=true"
+  #     - "traefik.http.services.grafana.loadbalancer.server.port=8082"
+  #     - "traefik.http.routers.grafana.entrypoints=web"
+  #     - "traefik.http.routers.grafana.rule=PathPrefix(`/grafana`)"
+  #   depends_on:
+  #     # influxdb:
+  #     #   condition: service_started
+  #     reverse-proxy:
+  #       condition: service_started
+
+  # wifi-connect:
+  #   image: bh.cr/balenalabs/wifi-connect-rpi
+  #   container_name: wifi-connect
+  #   network_mode: host
+  #   labels:
+  #       io.balena.features.dbus: '1'
+  #       io.balena.features.firmware: '1'
+  #   cap_add:
+  #       - NET_ADMIN
+  #   environment:
+  #       DBUS_SYSTEM_BUS_ADDRESS: "unix:path=/host/run/dbus/system_bus_socket"
+
