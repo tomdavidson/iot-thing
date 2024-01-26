@@ -26,7 +26,8 @@ advanced:
   channel: 15
 
 frontend:
-  port: 8084
+  port: 5000
+  host: 0.0.0.0
 
 experimental:
   new_api: true
